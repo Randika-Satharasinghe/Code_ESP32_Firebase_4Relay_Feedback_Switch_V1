@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Greenhouse Dashboard</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="background-glob"></div>
+    <div class="background-glob-2"></div>
+
+    <div class="app-container">
+        <header>
+            <h1><i class="fa-solid fa-leaf"></i> Greenhouse <span class="highlight">Monitor</span></h1>
+            <div class="status-badge" id="connectionStatus">Connecting...</div>
+        </header>
+
+        <main>
+            <!-- Monitoring Section -->
+            <section class="monitor-section">
+                <h2>Real-time Status</h2>
+                <div class="cards-grid">
+                    <!-- Temperature -->
+                    <div class="card glass">
+                        <div class="card-icon"><i class="fa-solid fa-temperature-three-quarters"></i></div>
+                        <div class="card-info">
+                            <h3>Temperature</h3>
+                            <div class="value-unit">
+                                <span id="tempValue">--</span><span class="unit">°C</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Humidity -->
+                    <div class="card glass">
+                        <div class="card-icon"><i class="fa-solid fa-droplet"></i></div>
+                        <div class="card-info">
+                            <h3>Humidity</h3>
+                            <div class="value-unit">
+                                <span id="humValue">--</span><span class="unit">%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Moisture -->
+                    <div class="card glass">
+                        <div class="card-icon"><i class="fa-solid fa-water"></i></div>
+                        <div class="card-info">
+                            <h3>Soil Moisture</h3>
+                            <div class="value-unit">
+                                <span id="moistureValue">--</span><span class="unit">ADC</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Light -->
+                    <div class="card glass">
+                        <div class="card-icon"><i class="fa-solid fa-sun"></i></div>
+                        <div class="card-info">
+                            <h3>Light Level</h3>
+                            <div class="value-unit">
+                                <span id="lightValue">--</span><span class="unit">ADC</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actuator Status -->
+                <div class="actuator-status glass">
+                    <h3>System State</h3>
+                    <div class="actuator-grid">
+                        <div class="status-item">
+                            <span>Fan / Vent</span>
+                            <span class="status-pill" id="fanStatus">OFF</span>
+                        </div>
+                        <div class="status-item">
+                            <span>Grow Light</span>
+                            <span class="status-pill" id="lightStatus">OFF</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration Section -->
+            <section class="config-section glass">
+                <h2><i class="fa-solid fa-sliders"></i> Configuration</h2>
+                <div class="form-grid">
+                    <div class="input-group">
+                        <label>Max Temp Threshold (°C)</label>
+                        <input type="number" id="tempThresholdInput" step="0.1">
+                        <small>Fan turns ON above this value</small>
+                    </div>
+                    <div class="input-group">
+                        <label>Min Light Threshold (ADC)</label>
+                        <input type="number" id="lightThresholdInput" step="1">
+                        <small>Light turns ON below this value</small>
+                    </div>
+                    <!-- Note: Pump removed, so no moisture threshold needed for actuation -->
+                </div>
+                <button id="saveConfigBtn" class="btn-primary">Save Configuration</button>
+            </section>
+
+            <!-- Charts Section -->
+            <section class="charts-section glass">
+                <h2>Live Data History</h2>
+                <div class="chart-container">
+                    <canvas id="sensorChart"></canvas>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>
