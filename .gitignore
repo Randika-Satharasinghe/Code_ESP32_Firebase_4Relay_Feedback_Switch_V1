@@ -22,6 +22,7 @@ Thumbs.db
 # Python (Local Server)
 __pycache__/
 *.pyc
+server.py
 
 # Logs
 *.log
