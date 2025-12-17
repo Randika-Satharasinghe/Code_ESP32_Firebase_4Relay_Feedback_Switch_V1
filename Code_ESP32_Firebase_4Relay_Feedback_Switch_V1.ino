@@ -2,7 +2,6 @@
 #include <Firebase_ESP_Client.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
-#include <DHT.h>
 #include <ESP32Servo.h>
 
 // ==========================================
@@ -19,11 +18,11 @@
 // ==========================================
 //  PIN DEFINITIONS & SENSOR OBJECTS
 // ==========================================
-#define DHTPIN 4
-#define DHTTYPE DHT22
-DHT dht(DHTPIN, DHTTYPE);
+// Capacitive Soil Moisture Sensor
+#define SOIL_PIN 34           // Analog Input (ADC1)
+const int AirValue = 3250;    // Dry reading (calibrated)
+const int WaterValue = 1420;  // Wet reading (calibrated)
 
-#define SOIL_PIN 34    // Analog Input
 #define LDR_PIN 35     // Analog Input
 #define RELAY_FAN 5
 #define RELAY_LIGHT 18
@@ -42,15 +41,13 @@ FirebaseConfig config;
 unsigned long sendDataPrevMillis = 0;
 
 // Current Sensor Readings
-float currentTemp = 0.0;
-float currentHum = 0.0;
-int currentMoisture = 0;
+int currentMoistureRaw = 0;
+int currentMoisturePercent = 0;
 int currentLight = 0;
 
 // Thresholds (Defaults)
-float tempThreshold = 30.0;
+int moistureThreshold = 30; // Percentage
 int lightThreshold = 1000;
-// Note: Pump/Moisture threshold is monitored but not actuated.
 
 // Forward Declarations
 void sendSensorData();
@@ -62,7 +59,10 @@ void setup() {
   Serial.begin(115200);
   
   // Init Sensors & Actuators
-  dht.begin();
+  // Configure ADC for capacitive sensor
+  analogReadResolution(12);     // 12-bit resolution (0-4095)
+  analogSetAttenuation(ADC_11db); // Allow reading up to 3.3V
+  
   myservo.attach(SERVO_PIN);
   myservo.write(0); // init closed
 
@@ -109,34 +109,46 @@ void loop() {
 }
 
 void sendSensorData() {
-  float h = dht.readHumidity();
-  float t = dht.readTemperature();
-  int moisture = analogRead(SOIL_PIN);
+  // Read capacitive soil moisture sensor
+  int moistureRaw = analogRead(SOIL_PIN);
   int light = analogRead(LDR_PIN);
 
-  // Check if any reads failed and exit early (to avoid partial updates or nan)
-  if (isnan(h) || isnan(t)) {
-    Serial.println("Failed to read from DHT sensor!");
-    // We can still send others? For now, let's skip.
-    return;
-  }
+  // Convert moisture to percentage (reversed: high value = dry)
+  int moisturePercent = map(moistureRaw, AirValue, WaterValue, 0, 100);
+  
+  // Constrain to 0-100%
+  if (moisturePercent > 100) moisturePercent = 100;
+  else if (moisturePercent < 0) moisturePercent = 0;
   
   // Update globals
-  currentTemp = t;
-  currentHum = h;
-  currentMoisture = moisture;
+  currentMoistureRaw = moistureRaw;
+  currentMoisturePercent = moisturePercent;
   currentLight = light;
 
-  Serial.printf("T:%.1f H:%.1f M:%d L:%d\n", t, h, moisture, light);
+  Serial.printf("Moisture: %d%% (Raw: %d) | Light: %d\n", moisturePercent, moistureRaw, light);
 
-  // Send to Firebase
-  Firebase.RTDB.setFloat(&fbdo, "/greenhouse/status/temp", t);
-  Firebase.RTDB.setFloat(&fbdo, "/greenhouse/status/humidity", h);
-  Firebase.RTDB.setInt(&fbdo, "/greenhouse/status/moisture", moisture);
+  // 1. Send Real-time Status (Overwrites existing)
+  Firebase.RTDB.setInt(&fbdo, "/greenhouse/status/moisturePercent", moisturePercent);
+  Firebase.RTDB.setInt(&fbdo, "/greenhouse/status/moistureRaw", moistureRaw);
   Firebase.RTDB.setInt(&fbdo, "/greenhouse/status/light", light);
+
+  // 2. Push History Entry (Append new node)
+  FirebaseJson json;
+  json.set("moisturePercent", moisturePercent);
+  json.set("moistureRaw", moistureRaw);
+  json.set("light", light);
+  json.set("ts/.sv", "timestamp"); // Firebase server timestamp
+
+  if (Firebase.RTDB.pushJSON(&fbdo, "/greenhouse/history", &json)) {
+      Serial.println("History data pushed");
+  } else {
+      Serial.println(fbdo.errorReason());
+  }
 }
 
 void controlActuators() {
+  // Actuators Disabled as per request
+  /*
   // 1. Fan/Vent Logic
   if (currentTemp > tempThreshold) {
     digitalWrite(RELAY_FAN, HIGH);
@@ -156,6 +168,8 @@ void controlActuators() {
     digitalWrite(RELAY_LIGHT, LOW);
     Serial.println("Light OFF");
   }
+  */
+  Serial.println("Actuators disabled.");
 }
 
 void streamCallback(FirebaseStream data) {
@@ -163,9 +177,9 @@ void streamCallback(FirebaseStream data) {
                 data.dataPath().c_str(), data.dataType().c_str(), data.stringData().c_str());
 
   if (data.dataType() == "int" || data.dataType() == "float" || data.dataType() == "double") {
-    if (data.dataPath() == "/tempThreshold") {
-      tempThreshold = data.floatData();
-      Serial.printf("Updated tempThreshold: %.2f\n", tempThreshold);
+    if (data.dataPath() == "/moistureThreshold") {
+      moistureThreshold = data.intData();
+      Serial.printf("Updated moistureThreshold: %d\n", moistureThreshold);
     } else if (data.dataPath() == "/lightThreshold") {
       lightThreshold = data.intData();
       Serial.printf("Updated lightThreshold: %d\n", lightThreshold);

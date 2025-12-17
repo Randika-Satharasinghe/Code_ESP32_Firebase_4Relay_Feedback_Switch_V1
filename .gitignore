@@ -1,0 +1,27 @@
+# Arduino
+*.elf
+*.bin
+*.hex
+*.map
+build/
+.arduino15/
+
+# ESP32 / Data
+*.json
+!package.json
+!manifest.json
+
+# System
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Python (Local Server)
+__pycache__/
+*.pyc
+
+# Logs
+*.log

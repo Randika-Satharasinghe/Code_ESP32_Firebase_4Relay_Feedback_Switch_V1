@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+import { getDatabase, ref, onValue, set, query, limitToLast, onChildAdded } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
 
 // Firebase Config
 const firebaseConfig = {
@@ -20,6 +20,7 @@ const els = {
     light: document.getElementById('lightValue'),
     fanStatus: document.getElementById('fanStatus'),
     lightStatus: document.getElementById('lightStatus'),
+    loc: document.getElementById('locValue'),
     tempInput: document.getElementById('tempThresholdInput'),
     lightInput: document.getElementById('lightThresholdInput'),
     saveBtn: document.getElementById('saveConfigBtn')
@@ -35,79 +36,87 @@ const sensorChart = new Chart(ctx, {
     data: {
         labels: [],
         datasets: [
-            { label: 'Temp (°C)', borderColor: '#ff5252', data: [] },
-            { label: 'Humidity (%)', borderColor: '#2979ff', data: [] },
-            { label: 'Moisture', borderColor: '#00e676', data: [], hidden: true }, // Hidden by default to avoid scale messes
-            { label: 'Light', borderColor: '#ffea00', data: [], hidden: true }
+            { label: 'Moisture', borderColor: '#ff5252', data: [] },
+            { label: 'Light', borderColor: '#2979ff', data: [] },
+            // Moisture/Light hidden on chart to keep it clean, can be added if requested
         ]
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
-            x: { grid: { color: 'rgba(255,255,255,0.1)' } },
-            y: { grid: { color: 'rgba(255,255,255,0.1)' } }
+            x: {
+                grid: { color: 'rgba(255,255,255,0.1)' },
+                ticks: { color: '#ccc' }
+            },
+            y: {
+                grid: { color: 'rgba(255,255,255,0.1)' },
+                ticks: { color: '#ccc' }
+            }
+        },
+        plugins: {
+            legend: { labels: { color: 'white' } }
         }
     }
 });
 
-// Update Chart
-function updateChart(temp, hum, moist, light) {
-    const now = new Date().toLocaleTimeString();
-    
-    if (sensorChart.data.labels.length > 20) {
+// Update Chart with new data point
+function addDataToChart(timestamp, moisture, light) {
+    const date = new Date(timestamp);
+    const timeLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    if (sensorChart.data.labels.length > 50) {
         sensorChart.data.labels.shift();
         sensorChart.data.datasets.forEach(bs => bs.data.shift());
     }
 
-    sensorChart.data.labels.push(now);
-    sensorChart.data.datasets[0].data.push(temp);
-    sensorChart.data.datasets[1].data.push(hum);
-    sensorChart.data.datasets[2].data.push(moist);
-    sensorChart.data.datasets[3].data.push(light);
+    sensorChart.data.labels.push(timeLabel);
+    sensorChart.data.datasets[0].data.push(moisture);
+    sensorChart.data.datasets[1].data.push(light);
     sensorChart.update();
 }
 
-// Listen to Status
+// Listen to Real-time Status (Cards & Actuators)
 const statusRef = ref(db, 'greenhouse/status');
 onValue(statusRef, (snapshot) => {
-    const data = snapshot.val();
-    if (data) {
-        statusBadge.textContent = "Connected";
-        statusBadge.style.color = "#00e676";
-        
-        els.temp.textContent = data.temp?.toFixed(1) || "--";
-        els.hum.textContent = data.humidity?.toFixed(1) || "--";
-        els.moist.textContent = data.moisture || "--";
-        els.light.textContent = data.light || "--";
+    try {
+        const data = snapshot.val();
+        console.log("Status Data:", data);
+        if (data) {
+            statusBadge.textContent = "Connected";
+            statusBadge.style.color = "#00e676";
 
-        // Determine Actuator Status (Simulated logic based on values & thresholds)
-        // Since ESP32 controls it, we ideally should read actuator status from Firebase.
-        // But ESP32 doesn't write actuator status (only reads config).
-        // So we infer it, or we could update ESP to write status.
-        // For now, let's infer based on received values and known thresholds.
-        
-        // Fan
-        if (data.temp > currentThresholds.temp) {
-            els.fanStatus.textContent = "ON";
-            els.fanStatus.className = "status-pill on";
-        } else {
-            els.fanStatus.textContent = "OFF";
+            // Fix for 0 values
+            els.temp.textContent = (data.moisturePercent !== undefined) ? data.moisturePercent : "--";
+            els.hum.textContent = (data.moistureRaw !== undefined) ? data.moistureRaw : "--";
+            els.moist.textContent = (data.moisturePercent !== undefined && data.moisturePercent !== null) ? data.moisturePercent : "--";
+            els.light.textContent = (data.light !== undefined && data.light !== null) ? data.light : "--";
+
+            // Location
+            if (data.lat && data.lng) {
+                els.loc.innerHTML = `Lat: ${data.lat}<br>Lng: ${data.lng}`;
+            } else {
+                els.loc.textContent = "No GPS Data";
+            }
+
+            // Actuators disabled, but keeping status display
+            els.fanStatus.textContent = "DISABLED";
             els.fanStatus.className = "status-pill off";
-        }
-
-        // Light
-        if (data.light < currentThresholds.light) {
-            els.lightStatus.textContent = "ON";
-            els.lightStatus.className = "status-pill on";
-        } else {
-            els.lightStatus.textContent = "OFF";
+            els.lightStatus.textContent = "DISABLED";
             els.lightStatus.className = "status-pill off";
         }
+    } catch (e) { console.error(e); }
+});
 
-        updateChart(data.temp, data.humidity, data.moisture, data.light);
+// Listen to History for Chart (Last 50 points)
+const historyRef = query(ref(db, 'greenhouse/history'), limitToLast(50));
+onChildAdded(historyRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data && data.ts && data.moisturePercent !== undefined && data.light !== undefined) {
+        addDataToChart(data.ts, data.moisturePercent, data.light);
     }
 });
+
 
 // Listen to Config (Initial Load)
 const configRef = ref(db, 'greenhouse/config');
@@ -133,9 +142,6 @@ els.saveBtn.addEventListener('click', () => {
     set(ref(db, 'greenhouse/config'), {
         tempThreshold: newTemp,
         lightThreshold: newLight,
-        // Preserve moisture threshold if it exists, or just don't write it?
-        // Since we are replacing the node, we should be careful.
-        // But since we aren't using moisture threshold anymore, it's fine.
     }).then(() => {
         alert("Configuration Saved!");
     }).catch((err) => {
